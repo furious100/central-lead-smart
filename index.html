@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Painel de Leads</title>
+<link rel="icon" type="image/png" href="logo.png">
+<style>
+:root{--bg:#0b0d10;--card:#151a21;--bd:#262d38;--tx:#f3f5f8;--mut:#9aa5b4;--ac:#e8b44c;--acx:#1a1203;--ok:#2ecc71;--red:#ff6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:calc(14px + env(safe-area-inset-top,0px)) 14px calc(30px + env(safe-area-inset-bottom,0px))}
+.w{max-width:760px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+header h1{font-size:20px;margin:0}
+.ghost{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:10px;padding:8px 12px;font:inherit;font-size:14px;cursor:pointer}
+.tabs{display:flex;gap:8px;margin-bottom:10px;overflow-x:auto}
+.tab{flex:none;background:var(--card);border:1px solid var(--bd);color:var(--mut);border-radius:20px;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.tab.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+#q{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;margin-bottom:14px}
+.lead{background:var(--card);border:1px solid var(--bd);border-left:4px solid var(--ac);border-radius:14px;padding:14px;margin-bottom:12px}
+.lead.late{border-left-color:var(--red)}
+.lead.done{border-left-color:var(--ok);opacity:.6}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.nm{font-size:19px;font-weight:700}
+.tm{font-size:13px;color:var(--mut);white-space:nowrap}
+.late .tm{color:var(--red);font-weight:700}
+.ph{color:var(--mut);font-size:14px;margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 12px}
+.chips span{background:#212833;border-radius:8px;padding:4px 9px;font-size:14px}
+.chips .k{background:rgba(232,180,76,.18);color:var(--ac);font-weight:700}
+.btns{display:flex;gap:8px}
+.zap{flex:1;text-align:center;text-decoration:none;background:#25d366;color:#04210f;border-radius:12px;padding:13px;font-weight:800}
+.ok{flex:1;background:#212833;color:var(--tx);border:1.5px solid var(--bd);border-radius:12px;padding:13px;font:inherit;font-weight:700;cursor:pointer}
+.done .ok{border-color:var(--ok);color:var(--ok)}
+.empty{text-align:center;color:var(--mut);padding:40px 0}
+#login{max-width:340px;margin:14vh auto 0}
+#login input{width:100%;padding:14px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;margin-bottom:10px}
+#login button{width:100%;background:var(--ac);color:var(--acx);border:0;border-radius:12px;padding:14px;font:inherit;font-weight:800;cursor:pointer}
+#msg{color:var(--red);font-size:14px;min-height:20px;margin-top:8px}
+</style></head><body>
+
+<div id="login" style="display:none">
+  <h1>Painel de Leads</h1>
+  <input id="em" type="email" placeholder="E-mail" autocomplete="username">
+  <input id="pw" type="password" placeholder="Senha" autocomplete="current-password">
+  <button id="in">Entrar</button><div id="msg"></div>
+</div>
+
+<div class="w" id="app" style="display:none">
+  <header><h1>📋 Leads</h1><div><button class="ghost" id="rf">↻</button> <button class="ghost" id="out">Sair</button></div></header>
+  <div class="tabs" id="tabs"></div>
+  <input id="q" type="search" placeholder="Buscar por nome ou telefone…">
+  <div id="list"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL="https://zimnxxlbqxyrrangmcxd.supabase.co";
+const SUPABASE_ANON_KEY="sb_publishable_ctcdhUMkMnTLnjbqF5g4QQ_ZS0jjl4X";
+const MSG="Olá, {nome}! Vi suas respostas no formulário e já separei a fechadura ideal pra você 🔐";
+const PRAZO_MIN=30; // passou disso sem contato = vermelho
+
+/* Texto curto que o SDR vê para cada resposta (edite à vontade) */
+const SHORT={
+ ja_possui:{'Sim, quero instalar ou substituir':'Já tem digital','Não, quero comprar uma':'Quer comprar','Já tenho uma fechadura convencional e quero trocar':'Tem convencional'},
+ abertura:{'De giro':'Giro','Pivotante/Dobradiça':'Pivotante','Pivotante':'Pivotante','De correr':'Correr','É um portão':'Portão'},
+ estilo:{'Não sei qual melhor pra minha porta':'Estilo: não sabe'},
+ metodos:{'Senha numérica':'Senha','Biometria':'Biometria','Cartão de acesso':'Cartão','Aplicativo no celular':'App','Reconhecimento facial':'Facial','Palma da mão':'Palma'},
+ remoto:{'Sim, quero abrir a porta mesmo estando fora de casa':'Abrir à distância','Sim, quero acompanhar ou gerenciar os acessos':'Gerenciar acessos','Não preciso deste recurso':'Sem remoto','Não sei te dizer ainda':'Remoto: indeciso'},
+ perfil_aparente:{'Sim, tem detalhes':'Perfil c/ detalhes','Não, toda lisa':'Perfil liso'}
+};
+const sh=(k,v)=>v==null||v===''?'':(SHORT[k]&&SHORT[k][v])||v;
+
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let ALL=[], tab='novos', timer;
+
+function phone(d){d=String(d).replace(/\D/g,'');if(d.startsWith('55')&&d.length>=12)d=d.slice(2);
+  const f=d.length===11?`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`:d.length===10?`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`:d;
+  return {fmt:f,wa:'55'+d};}
+function ago(iso){const m=Math.floor((Date.now()-new Date(iso))/60000);
+  if(m<1)return'agora';if(m<60)return`há ${m} min`;const h=Math.floor(m/60);if(h<24)return`há ${h} h`;return new Date(iso).toLocaleDateString('pt-BR')+' '+new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}
+
+function render(){
+  const novos=ALL.filter(l=>!l.atendido), fei=ALL.filter(l=>l.atendido);
+  $('#tabs').innerHTML=[['novos',`Novos (${novos.length})`],['feitos',`Contato feito (${fei.length})`],['todos',`Todos (${ALL.length})`]]
+    .map(([k,t])=>`<button class="tab ${tab===k?'on':''}" data-t="${k}">${t}</button>`).join('');
+  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+  const term=$('#q').value.trim().toLowerCase(), digits=term.replace(/\D/g,'');
+  let L=tab==='novos'?novos:tab==='feitos'?fei:ALL;
+  if(term)L=L.filter(l=>l.nome.toLowerCase().includes(term)||(digits&&l.whatsapp.includes(digits)));
+  $('#list').innerHTML=L.length?L.map(l=>{
+    const p=phone(l.whatsapp), mins=(Date.now()-new Date(l.criado_em))/60000, late=!l.atendido&&mins>PRAZO_MIN;
+    const chips=[
+      l.material&&`<span>${esc(l.material)}</span>`,
+      l.abertura&&`<span>${esc(sh('abertura',l.abertura))}</span>`,
+      l.espessura&&`<span class="k">Espessura ${esc(l.espessura)}</span>`,
+      l.estilo&&`<span>${esc(sh('estilo',l.estilo))}</span>`,
+      l.perfil_aparente&&`<span>${esc(sh('perfil_aparente',l.perfil_aparente))}</span>`,
+      ...(l.metodos||[]).map(m=>`<span class="k">${esc(sh('metodos',m))}</span>`),
+      l.remoto&&`<span>${esc(sh('remoto',l.remoto))}</span>`,
+      l.ja_possui&&`<span>${esc(sh('ja_possui',l.ja_possui))}</span>`
+    ].filter(Boolean).join('');
+    const first=l.nome.split(' ')[0];
+    return `<div class="lead ${l.atendido?'done':late?'late':''}">
+      <div class="top"><div class="nm">${esc(l.nome)}</div><div class="tm">${late?'⏰ ':''}${ago(l.criado_em)}</div></div>
+      <div class="ph">${esc(p.fmt)}</div>
+      <div class="chips">${chips}</div>
+      <div class="btns">
+        <a class="zap" target="_blank" rel="noopener" href="https://wa.me/${p.wa}?text=${encodeURIComponent(MSG.replace('{nome}',first))}">💬 Chamar no Zap</a>
+        <button class="ok" data-id="${l.id}" data-v="${!l.atendido}">${l.atendido?'✓ Contato feito':'Marcar contato feito'}</button>
+      </div></div>`}).join(''):`<div class="empty">${tab==='novos'?'Nenhum lead novo 🎉':'Nada por aqui.'}</div>`;
+  document.querySelectorAll('.ok').forEach(b=>b.onclick=async()=>{
+    const id=+b.dataset.id, v=b.dataset.v==='true', l=ALL.find(x=>x.id===id); l.atendido=v; render();
+    const {error}=await sb.from('leads').update({atendido:v}).eq('id',id);
+    if(error){l.atendido=!v;render();alert('Não foi possível salvar. Tente de novo.');}
+  });
+}
+async function load(){
+  const {data,error}=await sb.from('leads').select('*').order('criado_em',{ascending:false}).limit(500);
+  if(error){$('#list').innerHTML='<div class="empty">Erro ao carregar: '+esc(error.message)+'</div>';return;}
+  ALL=data; render();
+}
+function show(on){
+  $('#login').style.display=on?'none':'block'; $('#app').style.display=on?'block':'none'; clearInterval(timer);
+  if(on){load();timer=setInterval(load,15000);}
+}
+$('#in').onclick=async()=>{
+  $('#msg').textContent='';
+  const {error}=await sb.auth.signInWithPassword({email:$('#em').value.trim(),password:$('#pw').value});
+  error?$('#msg').textContent='E-mail ou senha incorretos.':show(true);
+};
+$('#pw').onkeydown=e=>{if(e.key==='Enter')$('#in').click()};
+$('#out').onclick=async()=>{await sb.auth.signOut();show(false)};
+$('#rf').onclick=load; $('#q').oninput=render;
+setInterval(()=>{if(ALL.length)render()},60000);
+sb.auth.getSession().then(({data})=>show(!!data.session));
+</script></body></html>
